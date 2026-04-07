@@ -49,10 +49,10 @@ copy .env.example .env
 
 ```env
 # Токен от @BotFather (обязательно!)
-TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_BOT_TOKEN=*тут токен бота*
 
 # Из Google Cloud Console (обязательно!)
-GOOGLE_CLIENT_ID=123456789-abc123def456.apps.googleusercontent.com
+GOOGLE_CLIENT_ID=*тут ваш клиент ид*
 GOOGLE_CLIENT_SECRET=GOCSPX-abcdefghijklmnop
 
 # Ключ шифрования (ровно 32 символа для AES-256)
