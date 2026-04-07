@@ -1,0 +1,36 @@
+# Конфигурация и секреты
+.env
+credentials.json
+token.json
+
+# База данных
+*.db
+*.db-journal
+data/
+
+# Логи
+logs/
+*.log
+
+# Бинарные файлы
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+tgBotGoogle
+
+# Временные файлы
+*.tmp
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Go
+go.sum
+vendor/
