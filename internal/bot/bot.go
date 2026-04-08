@@ -28,6 +28,7 @@ type Bot struct {
 	logger      *slog.Logger
 	schedulers  map[int64]*scheduler.Scheduler
 	schedMu     sync.Mutex
+	authPending sync.Map
 }
 
 type Config struct {
@@ -144,6 +145,10 @@ func (b *Bot) handleAuth(c telebot.Context) error {
 		return c.Reply("Google Calendar уже подключён.\nДля переподключения: /reauth")
 	}
 
+	if _, loaded := b.authPending.LoadOrStore(c.Sender().ID, true); loaded {
+		return c.Reply("Авторизация уже в процессе. Завершите текущую или подождите 5 минут.")
+	}
+
 	state := fmt.Sprintf("state_%d_%d", c.Sender().ID, time.Now().Unix())
 
 	authURL := calendar.GetAuthURL(calendar.Config{
@@ -161,6 +166,7 @@ func (b *Bot) handleAuth(c telebot.Context) error {
 	message += "Бот автоматически получит токен."
 
 	if err := c.Reply(message); err != nil {
+		b.authPending.Delete(c.Sender().ID)
 		b.logger.Error("Ошибка отправки сообщения", "error", err)
 		return err
 	}
@@ -173,6 +179,7 @@ func (b *Bot) handleAuth(c telebot.Context) error {
 }
 
 func (b *Bot) waitForAuthResult(telegramID int64, authChan chan oauth.AuthResult, userID int64) {
+	defer b.authPending.Delete(telegramID) // Разблокировка при любом исходе
 	recipient := &telebot.User{ID: telegramID}
 
 	select {
@@ -526,8 +533,4 @@ func (b *Bot) StartSchedulerForUser(userID int64, telegramID int64, tokenData []
 	})
 
 	b.logger.Info("Планировщик запущен", "user_id", userID, "interval", b.config.Scheduler.Interval)
-}
-
-func generateState(userID int64) string {
-	return fmt.Sprintf("state_%d", userID)
 }

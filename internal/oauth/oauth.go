@@ -20,6 +20,7 @@ type OAuth2Server struct {
 	logger      *slog.Logger
 	pendingAuth map[int64]chan AuthResult
 	mu          sync.Mutex
+	wg          sync.WaitGroup
 }
 
 type AuthResult struct {
@@ -57,7 +58,9 @@ func (s *OAuth2Server) Start(ctx context.Context) error {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		s.logger.Info("OAuth2 callback сервер запущен", "port", s.port)
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -65,7 +68,9 @@ func (s *OAuth2Server) Start(ctx context.Context) error {
 		}
 	}()
 
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		<-ctx.Done()
 		s.logger.Info("Остановка OAuth2 сервера...")
 
@@ -78,6 +83,10 @@ func (s *OAuth2Server) Start(ctx context.Context) error {
 	}()
 
 	return nil
+}
+
+func (s *OAuth2Server) Wait() {
+	s.wg.Wait()
 }
 
 func (s *OAuth2Server) RegisterAuth(telegramID int64) chan AuthResult {

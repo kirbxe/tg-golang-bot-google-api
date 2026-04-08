@@ -6,21 +6,19 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/alexl/tgBotGoogle/internal/bot"
 	"github.com/alexl/tgBotGoogle/internal/calendar"
 	"github.com/alexl/tgBotGoogle/internal/config"
 	"github.com/alexl/tgBotGoogle/internal/oauth"
-	"github.com/alexl/tgBotGoogle/internal/scheduler"
 	"github.com/alexl/tgBotGoogle/internal/storage"
-
-	"golang.org/x/oauth2"
 )
 
 func main() {
 	fmt.Println("🚀 Запуск Telegram бота для Google Calendar...")
-
+	var wg sync.WaitGroup
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Printf("❌ Ошибка загрузки конфигурации: %v\n", err)
@@ -57,8 +55,10 @@ func main() {
 	defer db.Close()
 	fmt.Println("✅ База данных подключена")
 
+
+	
 	oauthServer := oauth.New(oauth.Config{
-		Port: fmt.Sprintf("%d", cfg.Server.Port),
+		Port:    fmt.Sprintf("%d", cfg.Server.Port),
 		Storage: db,
 		CalendarCfg: calendar.Config{
 			ClientID:     cfg.Google.ClientID,
@@ -68,16 +68,16 @@ func main() {
 		Logger: logger,
 	})
 
-	ctx := context.Background()
-	if err := oauthServer.Start(ctx); err != nil {
+	oauthCtx := context.Background()
+	if err := oauthServer.Start(oauthCtx); err != nil {
 		logger.Error("Ошибка запуска OAuth сервера", "error", err)
 		os.Exit(1)
 	}
 	fmt.Printf("✅ OAuth2 сервер запущен на порту %d\n", cfg.Server.Port)
 
 	tgBot, err := bot.New(bot.Config{
-		Storage:     db,
-		TgConfig:    cfg,
+		Storage:  db,
+		TgConfig: cfg,
 		CalendarCfg: calendar.Config{
 			ClientID:     cfg.Google.ClientID,
 			ClientSecret: cfg.Google.ClientSecret,
@@ -92,8 +92,6 @@ func main() {
 	}
 	fmt.Println("✅ Telegram бот создан")
 
-	go startAllSchedulers(ctx, db, cfg, logger)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -104,7 +102,9 @@ func main() {
 	fmt.Println("📍 Нажмите Ctrl+C для остановки")
 	fmt.Println("📋 Команды: /start, /auth, /set_reminder, /next, /history, /stop")
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		if err := tgBot.Start(ctx); err != nil {
 			logger.Error("Ошибка работы бота", "error", err)
 		}
@@ -114,56 +114,10 @@ func main() {
 	fmt.Println("\n🛑 Получен сигнал остановки...")
 
 	cancel()
-
+	oauthServer.Wait()
+	wg.Wait()
 	logger.Info("Приложение остановлено")
 	fmt.Println("✅ Бот остановлен корректно")
-}
-
-func startAllSchedulers(ctx context.Context, db *storage.Storage, cfg *config.Config, logger *slog.Logger) {
-	logger.Info("Запуск планировщиков...")
-
-	go func() {
-		logger.Debug("Планировщики будут запускаться динамически при подключении пользователей")
-	}()
-}
-
-func startSchedulerForUser(ctx context.Context, db *storage.Storage, cfg *config.Config, logger *slog.Logger, userID int64, telegramID int64, tokenData []byte) {
-	token, err := oauth.DeserializeToken(tokenData)
-	if err != nil {
-		logger.Error("Ошибка десериализации токена", "error", err)
-		return
-	}
-
-	oauthToken := &oauth2.Token{
-		AccessToken:  token.AccessToken,
-		RefreshToken: token.RefreshToken,
-		Expiry:       token.Expiry,
-	}
-
-	cal, err := calendar.New(ctx, oauthToken, calendar.Config{
-		ClientID:     cfg.Google.ClientID,
-		ClientSecret: cfg.Google.ClientSecret,
-		RedirectURL:  cfg.Google.RedirectURL,
-	})
-	if err != nil {
-		logger.Error("Ошибка создания Calendar сервиса", "error", err)
-		return
-	}
-
-	sched := scheduler.New(scheduler.Config{
-		Storage:      db,
-		Calendar:     cal,
-		Interval:     cfg.Scheduler.Interval,
-		Logger:       logger,
-		UserID:       userID,
-		TelegramID:   telegramID,
-	})
-
-	notifyFunc := func(telegramID int64, message string) {
-		logger.Info("Уведомление", "telegram_id", telegramID, "message", message)
-	}
-
-	sched.Start(ctx, notifyFunc)
 }
 
 func parseLogLevel(level string) slog.Level {
